@@ -284,7 +284,7 @@ def rent_comparison_bar(unit_types, inplace_rents, market_rents, height=300):
         barmode="group",
         **_base_layout(height=height, legend_y=-0.22, margin=dict(l=60, r=20, t=20, b=60)),
         yaxis=dict(**_AXIS, tickprefix="$", tickformat=",.0f"),
-        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=11)),
+        xaxis=dict(gridcolor="rgba(0,0,0,0)"),
     )
     return fig
 
@@ -304,7 +304,7 @@ def lease_expiration_chart(months, counts, height=280):
     fig.update_layout(
         **_base_layout(height=height, showlegend=False, margin=dict(l=50, r=20, t=10, b=60)),
         yaxis=dict(**_AXIS),
-        xaxis=dict(**_AXIS, tickangle=-45, tickfont=dict(size=10)),
+        xaxis=dict(**_AXIS, tickangle=-45),
     )
     return fig
 

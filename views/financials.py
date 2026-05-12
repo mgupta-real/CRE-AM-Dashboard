@@ -235,24 +235,64 @@ def _render_financial_statement(t12_data: dict, budget_data: dict | None):
         row("NET OPERATING INCOME",                 "net operating income",      bold=True),
     ]
 
-    # Drop the empty header rows (no key match expected) but keep separators
-    display_rows = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
-    df = pd.DataFrame(display_rows)
+    # Render as styled HTML table — avoids Streamlit Styler stripping values
+    col_w = ["40%", "15%", "15%", "15%", "15%"]
+    header_bg   = "#0A1525"
+    subtotal_bg = "#0D1A2F"
+    normal_bg   = "#111827"
+    alt_bg      = "#0F1B30"
 
-    # Apply styling
-    def style_row(row_s):
-        orig = rows[row_s.name]
-        if orig["_bold"] or row_s["Line Item"].strip() in (
-            "NET OPERATING INCOME", "TOTAL REVENUE", "TOTAL OPERATING EXPENSES"
-        ):
-            return ["font-weight:700; color:#F0F4FF; background-color:#0D1A2F"] * len(row_s)
-        if row_s["Line Item"].strip() in ("REVENUE", "OPERATING EXPENSES"):
-            return ["font-weight:600; color:#00C2FF; background-color:#0A1525; letter-spacing:.05em"] * len(row_s)
-        return ["color:#C8D8F0"] * len(row_s)
+    html = """
+    <style>
+    .fin-table { width:100%; border-collapse:collapse; font-family:Inter,sans-serif; font-size:13px; }
+    .fin-table th { background:#0A1525; color:#8BA3C7; font-size:11px; text-transform:uppercase;
+                    letter-spacing:.06em; padding:8px 12px; text-align:left; border-bottom:1px solid #1E2D4A; }
+    .fin-table th:not(:first-child) { text-align:right; }
+    .fin-table td { padding:7px 12px; border-bottom:1px solid #1A2540; }
+    .fin-table td:not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; }
+    .row-header  { background:#0A1525 !important; color:#00C2FF !important; font-weight:700;
+                   text-transform:uppercase; letter-spacing:.06em; font-size:12px; }
+    .row-total   { background:#0D1A2F !important; color:#F0F4FF !important; font-weight:700; font-size:13px; }
+    .row-subtotal{ background:#0D1A2F !important; color:#E0ECFF !important; font-weight:600; }
+    .row-normal  { color:#C8D8F0; }
+    .row-normal:nth-child(even) { background:#0F1B30; }
+    </style>
+    <table class="fin-table">
+    <thead><tr>
+      <th style="width:40%">Line Item</th>
+      <th style="width:15%">T12</th>
+      <th style="width:15%">T6</th>
+      <th style="width:15%">T3</th>
+      <th style="width:15%">Current Mo.</th>
+    </tr></thead>
+    <tbody>
+    """
 
-    styled = df.style.apply(style_row, axis=1).set_properties(**{
-        "font-size": "13px",
-        "padding": "6px 12px",
-    })
+    for r in rows:
+        label   = r["Line Item"]
+        t12_v   = r["T12"]
+        t6_v    = r["T6"]
+        t3_v    = r["T3"]
+        t1_v    = r["Current Mo."]
+        is_bold = r["_bold"]
 
-    st.dataframe(styled, use_container_width=True, hide_index=True, height=700)
+        stripped = label.strip()
+        if stripped in ("REVENUE", "OPERATING EXPENSES"):
+            css = "row-header"
+        elif stripped in ("TOTAL REVENUE", "TOTAL OPERATING EXPENSES", "NET OPERATING INCOME"):
+            css = "row-total"
+        elif is_bold:
+            css = "row-subtotal"
+        else:
+            css = "row-normal"
+
+        html += f"""<tr class="{css}">
+          <td>{label}</td>
+          <td>{t12_v}</td>
+          <td>{t6_v}</td>
+          <td>{t3_v}</td>
+          <td>{t1_v}</td>
+        </tr>"""
+
+    html += "</tbody></table>"
+    st.markdown(html, unsafe_allow_html=True)
