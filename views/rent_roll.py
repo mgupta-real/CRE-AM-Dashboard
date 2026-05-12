@@ -44,20 +44,45 @@ def render(rr_data: dict | None):
     ann    = s["annual_sched_rent"]
 
     # ── KPI Row ────────────────────────────────────────────────────────────
+    # Contextual second-line info ("delta" slot) is computed from currently
+    # available data — historical comparisons activate when prior rent rolls
+    # are uploaded.
+    vac_pct = (vac_u / total) if total else None
+    gap_per_unit = (avg_mkt - avg_ip) if (avg_mkt and avg_ip) else None
+    ann_per_unit = (ann / total) if total and ann else None
+    notice_vac_pct = ((not_u + vac_u) / total) if total else None
+    occ_target_gap = (occ_p - 0.92) * 100 if occ_p is not None else None
+
     cols = st.columns(8)
     kpis = [
-        ("Total Units",     fmt_number(total),          "🏢", None),
-        ("Occupied",        fmt_number(occ_u),          "✅", True),
-        ("Physical Occ.",   fmt_pct(occ_p),             "📊", occ_p >= 0.92),
-        ("Avg In-Place",    fmt_currency(avg_ip),        "💰", None),
-        ("Avg Market Rent", fmt_currency(avg_mkt),       "🎯", None),
-        ("Loss-to-Lease",   fmt_currency(ltl),           "📉", ltl < 0),
-        ("Notice/Vacant",   fmt_number(not_u + vac_u),  "⚠",  False if (not_u+vac_u)/total > 0.08 else None),
-        ("Annual Sched. Rent", fmt_currency(ann),        "📆", None),
+        ("Total Units", fmt_number(total), "🏢",
+         f"Vacant: {fmt_number(vac_u)} • Notice: {fmt_number(not_u)}", None),
+        ("Occupied", fmt_number(occ_u), "✅",
+         f"of {fmt_number(total)} units", True),
+        ("Physical Occ.", fmt_pct(occ_p), "📊",
+         (f"Target: 92% • {'▲' if occ_target_gap >= 0 else '▼'} "
+          f"{abs(occ_target_gap):.1f} pp" if occ_target_gap is not None else ""),
+         (occ_p is not None and occ_p >= 0.92)),
+        ("Avg In-Place", fmt_currency(avg_ip), "💰",
+         (f"Market: {fmt_currency(avg_mkt)}" if avg_mkt else ""), None),
+        ("Avg Market Rent", fmt_currency(avg_mkt), "🎯",
+         (f"Gap: {fmt_currency(gap_per_unit)}" if gap_per_unit else ""), None),
+        ("Loss-to-Lease", fmt_currency(ltl), "📉",
+         (f"{fmt_pct(ltl_p)} of GPR" if ltl_p is not None else ""),
+         (ltl is not None and ltl < 0)),
+        ("Notice / Vacant", fmt_number(not_u + vac_u), "⚠",
+         (f"{fmt_pct(notice_vac_pct)} of portfolio" if notice_vac_pct is not None else ""),
+         (False if (notice_vac_pct is not None and notice_vac_pct > 0.08) else None)),
+        ("Annual Sched. Rent", fmt_currency(ann), "📆",
+         (f"≈ {fmt_currency(ann_per_unit)} / unit / yr" if ann_per_unit else ""),
+         None),
     ]
-    for col, (label, value, icon, pos) in zip(cols, kpis):
+    for col, (label, value, icon, delta, pos) in zip(cols, kpis):
         with col:
-            st.markdown(kpi_card(label, value, icon=icon), unsafe_allow_html=True)
+            st.markdown(
+                kpi_card(label, value, delta=delta, delta_positive=pos, icon=icon),
+                unsafe_allow_html=True,
+            )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
