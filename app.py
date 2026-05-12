@@ -353,38 +353,38 @@ if rr_data and st.session_state.get("rr_property_id") != property_id:
 
 if active == "Overview":
     _render_page_header("Portfolio Overview", "🏢", client_id, property_id)
-    from pages.portfolio_overview import render as render_portfolio
+    from views.portfolio_overview import render as render_portfolio
     render_portfolio(client_id)
     _render_insights_panel(t12_data, rr_data, property_id)
 
 elif active == "Financials":
     _render_page_header("Financial Dashboard", "📊", client_id, property_id)
-    from pages.financials import render as render_fin
+    from views.financials import render as render_fin
     render_fin(t12_data, rr_data)
 
 elif active == "Rent Roll":
     _render_page_header("Rent Roll Dashboard", "🏠", client_id, property_id)
-    from pages.rent_roll import render as render_rr
+    from views.rent_roll import render as render_rr
     render_rr(rr_data)
 
 elif active == "CapEx":
     _render_page_header("CapEx Tracker", "🔧", client_id, property_id)
-    from pages.capex import render as render_capex
+    from views.capex import render as render_capex
     render_capex(property_id)
 
 elif active == "Loans":
     _render_page_header("Loan Summary", "🏦", client_id, property_id)
-    from pages.loans import render as render_loans
+    from views.loans import render as render_loans
     render_loans(property_id)
 
 elif active == "Comparables":
     _render_page_header("Rent Comparables", "📍", client_id, property_id)
-    from pages.comparables import render as render_comps
+    from views.comparables import render as render_comps
     render_comps(property_id, rr_data)
 
 elif active == "Documents":
     _render_page_header("Document Repository", "📁", client_id, property_id)
-    from pages.documents import render as render_docs
+    from views.documents import render as render_docs
     render_docs(client_id, property_id)
 
 elif active == "Upload Center":
@@ -392,7 +392,7 @@ elif active == "Upload Center":
         st.warning("Upload Center is only available in Analyst/Admin view.")
     else:
         _render_page_header("Upload Center", "📤", client_id, property_id)
-        from pages.upload_center import render as render_upload
+        from views.upload_center import render as render_upload
         render_upload(client_id, property_id)
 
 elif active == "Settings":
