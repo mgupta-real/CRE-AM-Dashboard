@@ -37,8 +37,8 @@ def render(t12_data: dict | None, rr_data: dict | None, budget_data: dict | None
         ("Total Revenue (T12)", fmt_currency(rev, 0), "📈", None),
         ("Total Expenses (T12)", fmt_currency(exp, 0), "💸", None),
         ("Net Operating Income", fmt_currency(noi, 0), "🏦", None),
-        ("NOI Margin", fmt_pct(margin * 100 if margin else None), "📊", None),
-        ("Occupancy", fmt_pct(occ * 100 if occ else None) if occ else "—", "🏠",
+        ("NOI Margin", fmt_pct(margin) if margin else "—", "📊", None),
+        ("Occupancy", fmt_pct(occ) if occ else "—", "🏠",
          True if occ and occ >= 0.92 else (False if occ else None)),
         ("Budget Variance", "Upload Budget →" if not budget_data else fmt_currency(0), "📋", None),
     ]
@@ -106,26 +106,14 @@ def render(t12_data: dict | None, rr_data: dict | None, budget_data: dict | None
 
     with c2:
         st.markdown('<div class="dash-card"><div class="dash-card-title">T12 / T6 / T3 / Current</div>', unsafe_allow_html=True)
-        periods = ["T12", "T6", "T3", "Current"]
-        noi_vals = [
-            s.get("noi_t12"), s.get("noi_t6"), s.get("noi_t3"), s.get("noi_t1")
+        periods  = ["T12", "T6", "T3", "Current"]
+        noi_vals = [s.get("noi_t12"), s.get("noi_t6"), s.get("noi_t3"), s.get("noi_t1")]
+        marg_vals = [
+            (s["noi_t12"] / s["total_revenue_t12"]) if s.get("noi_t12") and s.get("total_revenue_t12") else None,
+            (s["noi_t6"]  / s["total_revenue_t6"])  if s.get("noi_t6")  and s.get("total_revenue_t6")  else None,
+            (s["noi_t3"]  / s["total_revenue_t3"])  if s.get("noi_t3")  and s.get("total_revenue_t3")  else None,
+            (s["noi_t1"]  / s["total_revenue_t1"])  if s.get("noi_t1")  and s.get("total_revenue_t1")  else None,
         ]
-        marg_vals = []
-        for p_rev, p_exp in [
-            (s.get("total_revenue_t12"), s.get("total_expenses_t12")),
-            (s.get("total_revenue_t6"),  s.get("total_expenses_t6")),
-            (s.get("total_revenue_t3"),  s.get("total_expenses_t3")),
-            (s.get("total_revenue_t1"),  s.get("total_expenses_t1")),
-        ]:
-            if p_rev and p_rev != 0 and s.get("noi_t12"):
-                noi_p = None
-                if p_rev and p_exp:
-                    noi_p_val = p_rev - p_exp
-                    marg_vals.append(noi_p_val / p_rev)
-                else:
-                    marg_vals.append(None)
-            else:
-                marg_vals.append(None)
 
         st.plotly_chart(
             t_period_comparison(periods, noi_vals, marg_vals, height=280),
@@ -191,47 +179,135 @@ def _render_budget_table(budget_data: dict):
 
 
 def _render_financial_statement(t12_data: dict, budget_data: dict | None):
-    """Build the financial statement table from T12 line items."""
+    """
+    Render T12 operating statement. Uses multiple fallback keys per row so
+    it works regardless of minor naming differences across T12 templates.
+    """
     line_items = t12_data.get("line_items", [])
 
-    # Filter to meaningful summary items (subtotals and key rollups)
-    KEY_ITEMS = {
-        "gross potential rents", "total effective income",
-        "less: vacancy loss", "less: loss to lease", "less: concessions",
-        "less: bad debt", "net rental income", "other income ops",
-        "total revenue", "total income",
-        "payroll", "utilities", "repairs & maintenance", "contract services",
-        "marketing", "administrative", "management fee",
-        "real estate taxes", "insurance", "operating expenses",
-        "net operating income",
-    }
-
-    rows = []
+    # Build lookup — keep entry with most complete data if duplicates
+    lkp = {}
     for li in line_items:
-        item = li.get("line_item", "").strip()
-        if item.lower() not in KEY_ITEMS:
+        key = li.get("line_item", "").strip().lower()
+        if not key:
             continue
-        rows.append({
-            "Line Item":   item,
-            "T12":         fmt_currency(li.get("t12")),
-            "T6":          fmt_currency(li.get("t6")),
-            "T3":          fmt_currency(li.get("t3")),
-            "Current Mo.": fmt_currency(li.get("t1")),
-        })
+        existing = lkp.get(key)
+        if existing is None:
+            lkp[key] = li
+        elif li.get("t12") is not None and existing.get("t12") is None:
+            lkp[key] = li
 
-    if not rows:
-        # Fallback: show all non-subtotal items
-        for li in line_items[:40]:
-            rows.append({
-                "Line Item":   li.get("line_item", ""),
-                "T12":         fmt_currency(li.get("t12")),
-                "T6":          fmt_currency(li.get("t6")),
-                "T3":          fmt_currency(li.get("t3")),
-                "Current Mo.": fmt_currency(li.get("t1")),
-            })
+    def get_li(*keys):
+        # 1) Try exact (case-insensitive) match first
+        for k in keys:
+            li = lkp.get(k.strip().lower())
+            if li is not None and li.get("t12") is not None:
+                return li
+        # 2) Fallback: substring match against any line item name
+        for k in keys:
+            needle = k.strip().lower()
+            if not needle:
+                continue
+            best = None
+            for name_lc, li in lkp.items():
+                if needle in name_lc and li.get("t12") is not None:
+                    # Prefer the shortest match (closest to the canonical name)
+                    if best is None or len(name_lc) < len(best[0]):
+                        best = (name_lc, li)
+            if best is not None:
+                return best[1]
+        # 3) Final fallback: exact match even if t12 is None (still better than nothing)
+        for k in keys:
+            li = lkp.get(k.strip().lower())
+            if li is not None:
+                return li
+        return None
 
-    if rows:
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, hide_index=True, height=420)
-    else:
-        st.info("No financial statement data available.")
+    def fv(li, col):
+        if li is None: return "—"
+        v = li.get(col)
+        return fmt_currency(v) if v is not None else "—"
+
+    def row(label, *keys, indent=0, bold=False):
+        li = get_li(*keys)
+        pad = "\u00a0" * (6 * indent)
+        return {
+            "_bold":       bold,
+            "Line Item":   pad + label,
+            "T12":         fv(li, "t12"),
+            "T6":          fv(li, "t6"),
+            "T3":          fv(li, "t3"),
+            "Current Mo.": fv(li, "t1"),
+        }
+
+    rows = [
+        row("REVENUE",                     bold=True),
+        row("  Gross Potential Rent",       "gross potential rent", "residential income",           indent=1),
+        row("  Loss to Lease",             "gain / loss to lease", "gain loss to lease",            indent=1),
+        row("  Concessions",               "concessions",                                           indent=1),
+        row("  Vacancy Loss",              "vacancy loss",                                          indent=1),
+        row("  Non-Revenue Units",         "non revenue units", "employee concessions",             indent=1),
+        row("  Bad Debt",                  "bad debt",                                              indent=1),
+        row("  Net Rental Income",         "net rental income",                    indent=1, bold=True),
+        row("  Other Income",              "other income ops", "other income other",                indent=1),
+        row("TOTAL REVENUE",               "total revenue", "total income",                bold=True),
+        row("OPERATING EXPENSES",          bold=True),
+        row("  Payroll",                   "payroll",                                               indent=1),
+        row("  Repairs & Maintenance",     "repairs & maintenance",                                 indent=1),
+        row("  Turnover",                  "turnover expenses",                                     indent=1),
+        row("  Contract Services",         "contract services",                                     indent=1),
+        row("  Utilities",                 "utilities",                                             indent=1),
+        row("  Landscaping",               "landscape maintenance contract", "landscaping",         indent=1),
+        row("  Marketing",                 "marketing",                                             indent=1),
+        row("  Administrative",            "administrative",                                        indent=1),
+        row("  Management Fees",           "management fee", "external management fee expense",     indent=1),
+        row("  Controllable Expenses",     "controllable",                         indent=1, bold=True),
+        row("  Real Estate Taxes",         "real estate taxes",                                     indent=1),
+        row("  Insurance",                 "insurance",                                             indent=1),
+        row("  Non-Controllable Expenses", "non controllable",                     indent=1, bold=True),
+        row("TOTAL OPERATING EXPENSES",    "operating expenses", "total operating expenses", bold=True),
+        row("NET OPERATING INCOME",        "net operating income",                        bold=True),
+    ]
+
+    # Render as HTML table — avoids Streamlit Styler stripping values
+    html = """
+    <style>
+    .fin-table{width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:13px;}
+    .fin-table th{background:#0A1525;color:#8BA3C7;font-size:11px;text-transform:uppercase;
+                  letter-spacing:.06em;padding:8px 14px;text-align:left;border-bottom:2px solid #1E2D4A;}
+    .fin-table th:not(:first-child){text-align:right;}
+    .fin-table td{padding:8px 14px;border-bottom:1px solid #1A2540;}
+    .fin-table td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums;font-family:'SF Mono',monospace;}
+    .row-section {background:#0A1525!important;color:#00C2FF!important;font-weight:700;
+                  text-transform:uppercase;letter-spacing:.07em;font-size:11px;}
+    .row-total   {background:#0D1A2F!important;color:#F0F4FF!important;font-weight:700;}
+    .row-subtotal{background:#101C35!important;color:#D0E4FF!important;font-weight:600;}
+    .row-normal  {background:#111827;color:#C8D8F0;}
+    .row-normal:nth-child(even){background:#0F1B30;}
+    </style>
+    <table class="fin-table">
+    <thead><tr>
+      <th style="width:38%">Line Item</th>
+      <th style="width:16%">T12</th>
+      <th style="width:16%">T6</th>
+      <th style="width:15%">T3</th>
+      <th style="width:15%">Current Mo.</th>
+    </tr></thead><tbody>"""
+
+    for r in rows:
+        label = r["Line Item"]
+        stripped = label.strip()
+        if stripped in ("REVENUE", "OPERATING EXPENSES"):
+            css = "row-section"
+        elif stripped in ("TOTAL REVENUE","TOTAL OPERATING EXPENSES","NET OPERATING INCOME"):
+            css = "row-total"
+        elif r["_bold"]:
+            css = "row-subtotal"
+        else:
+            css = "row-normal"
+        html += f"""<tr class="{css}">
+          <td>{label}</td><td>{r["T12"]}</td><td>{r["T6"]}</td>
+          <td>{r["T3"]}</td><td>{r["Current Mo."]}</td></tr>"""
+
+    html += "</tbody></table>"
+    st.markdown(html, unsafe_allow_html=True)
