@@ -1,6 +1,6 @@
 """
 components/charts.py
-Reusable Plotly chart functions with the dark CRE dashboard theme.
+Reusable Plotly chart functions — dark CRE dashboard theme.
 """
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -14,14 +14,13 @@ _AXIS = dict(
     zerolinecolor=COLORS["border"],
 )
 
-def _base_layout(height=320, margin=None, legend_y=-0.15, showlegend=True):
-    """Return a base layout dict — no yaxis/xaxis so callers can set freely."""
+def _base_layout(height=320, margin=None, legend_y=-0.18, showlegend=True):
     return dict(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Inter, sans-serif", color=COLORS["text_secondary"], size=12),
         height=height,
-        margin=margin or dict(l=10, r=10, t=10, b=40),
+        margin=margin or dict(l=50, r=20, t=20, b=50),
         legend=dict(
             bgcolor="rgba(0,0,0,0)",
             font=dict(color=COLORS["text_secondary"], size=11),
@@ -53,8 +52,8 @@ def revenue_expense_noi_trend(month_labels, revenues, expenses, nois, height=340
         mode="lines+markers", marker=dict(size=4),
     ))
     fig.update_layout(
-        **_base_layout(height=height, legend_y=-0.20),
-        xaxis=_AXIS,
+        **_base_layout(height=height, legend_y=-0.22, margin=dict(l=70, r=20, t=20, b=60)),
+        xaxis=dict(**_AXIS, tickangle=-30),
         yaxis=dict(**_AXIS, tickprefix="$", tickformat=",.0f"),
     )
     return fig
@@ -72,86 +71,142 @@ def noi_margin_trend(month_labels, margins, height=280):
         mode="lines+markers", marker=dict(size=4),
     ))
     fig.update_layout(
-        **_base_layout(height=height, showlegend=False),
-        xaxis=_AXIS,
-        yaxis=dict(**_AXIS, ticksuffix="%", tickformat=".1f"),
+        **_base_layout(height=height, showlegend=False, margin=dict(l=55, r=20, t=20, b=50)),
+        xaxis=dict(**_AXIS, tickangle=-30),
+        yaxis=dict(**_AXIS, ticksuffix="%", tickformat=".1f", range=[0, 80]),
     )
     return fig
 
 
 # ── T12/T6/T3/Current comparison bar ─────────────────────────────────────────
 def t_period_comparison(periods, noi_vals, noi_margins, height=300):
+    # Annualise T6→×2, T3→×4, T1→×12 for apples-to-apples comparison
+    annualised = []
+    multipliers = [1, 2, 4, 12]
+    for v, m in zip(noi_vals, multipliers):
+        annualised.append(v * m if v is not None else None)
+
+    # Recompute margins from annualised (avoid wild T1 swings on the line)
+    safe_margins = [m * 100 if m is not None else None for m in noi_margins]
+
     fig = make_subplots(specs=[[{"secondary_y": True}]])
+    bar_colors = [COLORS["accent_blue"], COLORS["accent_cyan"], COLORS["accent_teal"], COLORS["yellow"]]
     fig.add_trace(go.Bar(
-        x=periods, y=noi_vals, name="NOI ($)",
-        marker_color=[COLORS["accent_blue"], COLORS["accent_cyan"],
-                      COLORS["accent_teal"], COLORS["yellow"]],
-        text=[f"${v:,.0f}" if v else "" for v in noi_vals],
+        x=periods, y=annualised, name="NOI Annualised ($)",
+        marker_color=bar_colors,
+        text=[f"${v:,.0f}" if v else "" for v in annualised],
         textposition="outside",
-        textfont=dict(size=11, color=COLORS["text_primary"]),
+        textfont=dict(size=10, color=COLORS["text_primary"]),
     ), secondary_y=False)
     fig.add_trace(go.Scatter(
-        x=periods,
-        y=[m * 100 if m is not None else None for m in noi_margins],
+        x=periods, y=safe_margins,
         name="NOI Margin (%)", mode="lines+markers",
         line=dict(color=COLORS["yellow"], width=2),
         marker=dict(size=6, color=COLORS["yellow"]),
     ), secondary_y=True)
     fig.update_yaxes(tickprefix="$", tickformat=",.0f", secondary_y=False,
-                     gridcolor=COLORS["border"])
+                     gridcolor=COLORS["border"], tickfont=dict(size=11))
     fig.update_yaxes(ticksuffix="%", tickformat=".1f", secondary_y=True,
-                     showgrid=False)
+                     showgrid=False, range=[0, 80], tickfont=dict(size=11))
     fig.update_layout(
-        **_base_layout(height=height, legend_y=-0.20),
+        **_base_layout(height=height, legend_y=-0.22, margin=dict(l=70, r=60, t=20, b=50)),
         barmode="group",
         xaxis=_AXIS,
     )
     return fig
 
 
-# ── Revenue mix donut ─────────────────────────────────────────────────────────
-def revenue_mix_donut(labels, values, center_label="Total Revenue", center_val="", height=320):
+# ── Donut chart (shared by revenue & expense mix) ─────────────────────────────
+def _mix_donut(labels, values, center_label, center_val, height, colors):
+    """
+    Clean donut: percentages only on slices, full labels in legend below.
+    Avoids all label/legend collision issues.
+    """
     fig = go.Figure(go.Pie(
-        labels=labels, values=values,
-        hole=0.60,
-        marker=dict(colors=CHART_COLORS, line=dict(color=COLORS["bg_primary"], width=2)),
-        textinfo="label+percent",
-        textfont=dict(size=11, color=COLORS["text_primary"]),
-        hovertemplate="%{label}: $%{value:,.0f}<br>%{percent}<extra></extra>",
+        labels=labels,
+        values=values,
+        hole=0.62,
+        marker=dict(colors=colors, line=dict(color=COLORS["bg_primary"], width=2)),
+        # Show percent only on slice — no label text on slice to avoid overlap
+        textinfo="percent",
+        textfont=dict(size=10, color="#FFFFFF"),
+        textposition="inside",
+        # Only show labels for slices > 3% to avoid tiny-slice clutter
+        texttemplate="%{percent:.1%}",
+        insidetextorientation="radial",
+        hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
+        showlegend=True,
     ))
     fig.update_layout(
-        **_base_layout(height=height, margin=dict(l=10, r=10, t=10, b=10)),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif", color=COLORS["text_secondary"], size=11),
+        height=height,
+        margin=dict(l=10, r=10, t=20, b=120),   # large bottom for legend
         annotations=[dict(
-            text=f"<b>{center_val}</b><br><span style='font-size:11px'>{center_label}</span>",
-            x=0.5, y=0.5, font=dict(size=15, color=COLORS["text_primary"]), showarrow=False,
+            text=f"<b>{center_val}</b><br><span style='font-size:11px;color:{COLORS['text_secondary']}'>{center_label}</span>",
+            x=0.5, y=0.5,
+            font=dict(size=14, color=COLORS["text_primary"]),
+            showarrow=False,
         )],
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color=COLORS["text_secondary"]),
+            orientation="h",
+            y=-0.05,          # just below chart
+            x=0.5,
+            xanchor="center",
+            itemwidth=40,
+        ),
+        showlegend=True,
     )
     return fig
 
 
-# ── Expense mix donut ─────────────────────────────────────────────────────────
-def expense_mix_donut(labels, values, center_label="Total Expenses", center_val="", height=320):
-    return revenue_mix_donut(labels, values, center_label, center_val, height)
+def revenue_mix_donut(labels, values, center_label="Total Revenue", center_val="", height=340):
+    return _mix_donut(labels, values, center_label, center_val, height, CHART_COLORS)
+
+
+def expense_mix_donut(labels, values, center_label="Total Expenses", center_val="", height=340):
+    # Use a slightly different palette starting from index 2 to differentiate from rev
+    exp_colors = [
+        COLORS.get("chart3", "#FF6B6B"),
+        COLORS.get("chart4", "#4ECDC4"),
+        COLORS.get("chart5", "#45B7D1"),
+        COLORS.get("chart6", "#96CEB4"),
+        COLORS.get("chart7", "#FFEAA7"),
+        COLORS.get("chart1", "#DDA0DD"),
+        COLORS.get("chart2", "#98D8C8"),
+        "#F39C12", "#8E44AD", "#E74C3C",
+    ]
+    return _mix_donut(labels, values, center_label, center_val, height, exp_colors)
 
 
 # ── NOI Bridge waterfall ──────────────────────────────────────────────────────
 def noi_bridge(revenue, expenses, noi, height=320):
+    """
+    Proper waterfall: Revenue (blue) → Expenses drag down (red) → NOI total (teal).
+    """
     fig = go.Figure(go.Waterfall(
         orientation="v",
         measure=["absolute", "relative", "total"],
-        x=["Total Revenue", "Operating Expenses", "NOI"],
-        y=[revenue, -abs(expenses), noi],
-        text=[f"${revenue:,.0f}", f"-${abs(expenses):,.0f}", f"${noi:,.0f}"],
+        x=["Total Revenue", "– Expenses", "NOI"],
+        y=[revenue, -abs(expenses), 0],   # 0 for total — Plotly computes it
+        text=[
+            f"${revenue:,.0f}",
+            f"–${abs(expenses):,.0f}",
+            f"${noi:,.0f}",
+        ],
         textposition="outside",
-        decreasing=dict(marker_color=COLORS["red"]),
-        increasing=dict(marker_color=COLORS["accent_blue"]),
-        totals=dict(marker_color=COLORS["accent_teal"]),
-        connector=dict(line=dict(color=COLORS["border"], width=1)),
-        textfont=dict(color=COLORS["text_primary"], size=12),
+        textfont=dict(color=COLORS["text_primary"], size=11),
+        increasing=dict(marker=dict(color=COLORS["accent_blue"])),
+        decreasing=dict(marker=dict(color="#FF4560")),
+        totals=dict(marker=dict(color=COLORS["accent_teal"])),
+        connector=dict(line=dict(color=COLORS["border"], width=1, dash="dot")),
     ))
     fig.update_layout(
-        **_base_layout(height=height, showlegend=False),
-        xaxis=_AXIS,
+        **_base_layout(height=height, showlegend=False, margin=dict(l=70, r=20, t=40, b=40)),
+        xaxis=dict(**_AXIS, fixedrange=True),
         yaxis=dict(**_AXIS, tickprefix="$", tickformat=",.0f"),
     )
     return fig
@@ -161,20 +216,34 @@ def noi_bridge(revenue, expenses, noi, height=320):
 def occupancy_donut(occ_count, vac_count, notice_count, model_count, total, height=300):
     labels = ["Occupied", "Vacant", "Notice", "Model/Admin"]
     values = [occ_count, vac_count, notice_count, model_count]
-    colors_map = [COLORS["accent_blue"], COLORS["red"], COLORS["yellow"], COLORS["purple"]]
+    colors_map = [COLORS["accent_blue"], "#FF4560", COLORS["yellow"], COLORS["purple"]]
     fig = go.Figure(go.Pie(
         labels=labels, values=values, hole=0.62,
         marker=dict(colors=colors_map, line=dict(color=COLORS["bg_primary"], width=2)),
-        textinfo="label+percent",
-        textfont=dict(size=11),
+        textinfo="percent",
+        textfont=dict(size=10, color="#FFFFFF"),
+        textposition="inside",
+        insidetextorientation="radial",
         hovertemplate="%{label}: %{value} units (%{percent})<extra></extra>",
+        showlegend=True,
     ))
+    occ_pct = occ_count / total * 100 if total > 0 else 0
     fig.update_layout(
-        **_base_layout(height=height, margin=dict(l=0, r=0, t=10, b=10)),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=height,
+        margin=dict(l=0, r=0, t=10, b=80),
         annotations=[dict(
-            text=f"<b>{total}</b><br><span style='font-size:10px'>Total Units</span>",
-            x=0.5, y=0.5, font=dict(size=16, color=COLORS["text_primary"]), showarrow=False,
+            text=f"<b>{occ_pct:.1f}%</b><br><span style='font-size:10px'>Occupied</span>",
+            x=0.5, y=0.5, font=dict(size=15, color=COLORS["text_primary"]), showarrow=False,
         )],
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=10, color=COLORS["text_secondary"]),
+            orientation="h", y=-0.05, x=0.5, xanchor="center",
+        ),
+        font=dict(color=COLORS["text_secondary"]),
+        showlegend=True,
     )
     return fig
 
@@ -189,7 +258,7 @@ def unit_mix_bar(unit_types, counts, height=280):
         textfont=dict(size=11, color=COLORS["text_primary"]),
     ))
     fig.update_layout(
-        **_base_layout(height=height, margin=dict(l=80, r=40, t=10, b=10), showlegend=False),
+        **_base_layout(height=height, margin=dict(l=80, r=50, t=10, b=20), showlegend=False),
         xaxis=dict(**_AXIS),
         yaxis=dict(tickfont=dict(size=11, color=COLORS["text_primary"]), gridcolor="rgba(0,0,0,0)"),
     )
@@ -213,7 +282,7 @@ def rent_comparison_bar(unit_types, inplace_rents, market_rents, height=300):
     ))
     fig.update_layout(
         barmode="group",
-        **_base_layout(height=height, legend_y=-0.20),
+        **_base_layout(height=height, legend_y=-0.22, margin=dict(l=60, r=20, t=20, b=60)),
         yaxis=dict(**_AXIS, tickprefix="$", tickformat=",.0f"),
         xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=11)),
     )
@@ -229,13 +298,13 @@ def lease_expiration_chart(months, counts, height=280):
         marker=dict(size=7, color=COLORS["accent_cyan"]),
         text=[str(c) for c in counts],
         textposition="top center",
-        textfont=dict(size=11, color=COLORS["text_primary"]),
+        textfont=dict(size=10, color=COLORS["text_primary"]),
         fill="tozeroy", fillcolor="rgba(30,111,235,0.08)",
     ))
     fig.update_layout(
-        **_base_layout(height=height, showlegend=False),
+        **_base_layout(height=height, showlegend=False, margin=dict(l=50, r=20, t=10, b=60)),
         yaxis=dict(**_AXIS),
-        xaxis=dict(**_AXIS, tickangle=-30),
+        xaxis=dict(**_AXIS, tickangle=-45, tickfont=dict(size=10)),
     )
     return fig
 
@@ -254,9 +323,9 @@ def expiry_buckets_bar(buckets, counts, height=280):
         textfont=dict(size=11, color=COLORS["text_primary"]),
     ))
     fig.update_layout(
-        **_base_layout(height=height, showlegend=False),
+        **_base_layout(height=height, showlegend=False, margin=dict(l=50, r=20, t=10, b=60)),
         yaxis=dict(**_AXIS),
-        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10)),
+        xaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10), tickangle=-20),
     )
     return fig
 
@@ -271,7 +340,7 @@ def rent_per_sf_bar(unit_types, rpsf_vals, height=280):
         textfont=dict(size=11, color=COLORS["text_primary"]),
     ))
     fig.update_layout(
-        **_base_layout(height=height, showlegend=False),
+        **_base_layout(height=height, showlegend=False, margin=dict(l=60, r=20, t=10, b=40)),
         yaxis=dict(**_AXIS, tickprefix="$", tickformat=".2f"),
         xaxis=dict(gridcolor="rgba(0,0,0,0)"),
     )
@@ -287,7 +356,7 @@ def capex_by_category(categories, budgets, actuals, height=320):
                          marker_color=COLORS["accent_teal"]))
     fig.update_layout(
         barmode="group",
-        **_base_layout(height=height, margin=dict(l=10, r=10, t=10, b=60), legend_y=-0.30),
+        **_base_layout(height=height, legend_y=-0.30, margin=dict(l=70, r=20, t=20, b=80)),
         yaxis=dict(**_AXIS, tickprefix="$", tickformat=",.0f"),
         xaxis=dict(tickangle=-30, tickfont=dict(size=10)),
     )

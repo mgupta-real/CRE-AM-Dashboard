@@ -286,36 +286,48 @@ def parse_t12(file_path: str) -> dict:
     noi_margin = (noi_t12 / total_rev_t12) if (noi_t12 and total_rev_t12 and total_rev_t12 != 0) else None
 
     # ── Step 4: Monthly totals ─────────────────────────────────────────────
+    # Use Total Revenue / Operating Expenses rows directly — single source of
+    # truth that avoids double-counting individual line items.
     n_months = len(month_dates)
-    monthly_rev  = [0.0] * n_months
-    monthly_exp  = [0.0] * n_months
+    monthly_rev = [0.0] * n_months
+    monthly_exp = [0.0] * n_months
+
+    REV_TOTAL_NAMES = {"total revenue", "total income", "total effective income"}
+    EXP_TOTAL_NAMES = {"operating expenses", "total operating expenses", "total expenses"}
 
     for li in line_items:
-        if li["is_subtotal"]:
-            continue
-        if li["line_item"].lower() in ("total revenue", "total income"):
-            for m in range(n_months):
-                v = li["monthly"][m] if m < len(li["monthly"]) else None
-                if v: monthly_rev[m] += v
-        if li["line_item"].lower() == "operating expenses":
-            for m in range(n_months):
-                v = li["monthly"][m] if m < len(li["monthly"]) else None
-                if v: monthly_exp[m] += v
+        if li["line_item"].lower().strip() in REV_TOTAL_NAMES:
+            vals = [li["monthly"][m] if m < len(li["monthly"]) else None for m in range(n_months)]
+            if any(v and v > 0 for v in vals):
+                monthly_rev = [v if (v and v > 0) else 0.0 for v in vals]
+                break
 
-    # Fallback: sum individual items
+    for li in line_items:
+        if li["line_item"].lower().strip() in EXP_TOTAL_NAMES:
+            vals = [li["monthly"][m] if m < len(li["monthly"]) else None for m in range(n_months)]
+            if any(v and v > 0 for v in vals):
+                monthly_exp = [abs(v) if (v and v > 0) else 0.0 for v in vals]
+                break
+
+    # Fallback: sum non-subtotal items (skip top-level catch-alls to avoid double count)
+    SKIP_NAMES = {"residential income", "rental income", "gross potential rents"}
     if sum(monthly_rev) == 0:
         for li in line_items:
-            if li["is_revenue"] and not li["is_subtotal"] and li["t12"] and li["t12"] > 0:
+            if li["is_revenue"] and not li["is_subtotal"] and li.get("t12") and li["t12"] > 0:
+                if li["line_item"].lower().strip() in SKIP_NAMES:
+                    continue
                 for m in range(n_months):
                     v = li["monthly"][m] if m < len(li["monthly"]) else None
-                    if v: monthly_rev[m] += v
+                    if v and v > 0:
+                        monthly_rev[m] += v
 
     if sum(monthly_exp) == 0:
         for li in line_items:
-            if li["is_expense"] and not li["is_subtotal"] and li["t12"] and li["t12"] > 0:
+            if li["is_expense"] and not li["is_subtotal"] and li.get("t12") and li["t12"] > 0:
                 for m in range(n_months):
                     v = li["monthly"][m] if m < len(li["monthly"]) else None
-                    if v: monthly_exp[m] += abs(v)
+                    if v and v > 0:
+                        monthly_exp[m] += abs(v)
 
     monthly_noi = [monthly_rev[m] - monthly_exp[m] for m in range(n_months)]
 

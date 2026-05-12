@@ -106,26 +106,14 @@ def render(t12_data: dict | None, rr_data: dict | None, budget_data: dict | None
 
     with c2:
         st.markdown('<div class="dash-card"><div class="dash-card-title">T12 / T6 / T3 / Current</div>', unsafe_allow_html=True)
-        periods = ["T12", "T6", "T3", "Current"]
-        noi_vals = [
-            s.get("noi_t12"), s.get("noi_t6"), s.get("noi_t3"), s.get("noi_t1")
+        periods  = ["T12", "T6", "T3", "Current"]
+        noi_vals = [s.get("noi_t12"), s.get("noi_t6"), s.get("noi_t3"), s.get("noi_t1")]
+        marg_vals = [
+            (s["noi_t12"] / s["total_revenue_t12"]) if s.get("noi_t12") and s.get("total_revenue_t12") else None,
+            (s["noi_t6"]  / s["total_revenue_t6"])  if s.get("noi_t6")  and s.get("total_revenue_t6")  else None,
+            (s["noi_t3"]  / s["total_revenue_t3"])  if s.get("noi_t3")  and s.get("total_revenue_t3")  else None,
+            (s["noi_t1"]  / s["total_revenue_t1"])  if s.get("noi_t1")  and s.get("total_revenue_t1")  else None,
         ]
-        marg_vals = []
-        for p_rev, p_exp in [
-            (s.get("total_revenue_t12"), s.get("total_expenses_t12")),
-            (s.get("total_revenue_t6"),  s.get("total_expenses_t6")),
-            (s.get("total_revenue_t3"),  s.get("total_expenses_t3")),
-            (s.get("total_revenue_t1"),  s.get("total_expenses_t1")),
-        ]:
-            if p_rev and p_rev != 0 and s.get("noi_t12"):
-                noi_p = None
-                if p_rev and p_exp:
-                    noi_p_val = p_rev - p_exp
-                    marg_vals.append(noi_p_val / p_rev)
-                else:
-                    marg_vals.append(None)
-            else:
-                marg_vals.append(None)
 
         st.plotly_chart(
             t_period_comparison(periods, noi_vals, marg_vals, height=280),
@@ -191,47 +179,80 @@ def _render_budget_table(budget_data: dict):
 
 
 def _render_financial_statement(t12_data: dict, budget_data: dict | None):
-    """Build the financial statement table from T12 line items."""
-    line_items = t12_data.get("line_items", [])
+    """
+    Render a clean T12 financial statement with the key rollup rows only.
+    Structure mirrors a standard multifamily operating statement.
+    """
+    # Build a lookup: line_item name (lower) -> first matching line item dict
+    lkp = {}
+    for li in t12_data.get("line_items", []):
+        key = li.get("line_item", "").strip().lower()
+        if key and key not in lkp:
+            lkp[key] = li
 
-    # Filter to meaningful summary items (subtotals and key rollups)
-    KEY_ITEMS = {
-        "gross potential rents", "total effective income",
-        "less: vacancy loss", "less: loss to lease", "less: concessions",
-        "less: bad debt", "net rental income", "other income ops",
-        "total revenue", "total income",
-        "payroll", "utilities", "repairs & maintenance", "contract services",
-        "marketing", "administrative", "management fee",
-        "real estate taxes", "insurance", "operating expenses",
-        "net operating income",
-    }
+    def row(label, key, indent=0, bold=False, separator=False):
+        li = lkp.get(key.lower())
+        prefix = "    " * indent
+        return {
+            "_bold": bold,
+            "_sep":  separator,
+            "Line Item":   prefix + label,
+            "T12":         fmt_currency(li["t12"]) if li and li.get("t12") is not None else "—",
+            "T6":          fmt_currency(li["t6"])  if li and li.get("t6")  is not None else "—",
+            "T3":          fmt_currency(li["t3"])  if li and li.get("t3")  is not None else "—",
+            "Current Mo.": fmt_currency(li["t1"])  if li and li.get("t1")  is not None else "—",
+        }
 
-    rows = []
-    for li in line_items:
-        item = li.get("line_item", "").strip()
-        if item.lower() not in KEY_ITEMS:
-            continue
-        rows.append({
-            "Line Item":   item,
-            "T12":         fmt_currency(li.get("t12")),
-            "T6":          fmt_currency(li.get("t6")),
-            "T3":          fmt_currency(li.get("t3")),
-            "Current Mo.": fmt_currency(li.get("t1")),
-        })
+    rows = [
+        # ── REVENUE ──────────────────────────────────────────────────────
+        row("REVENUE",                              "",                          bold=True),
+        row("  Gross Potential Rent",               "gross potential rent",      indent=1),
+        row("  Loss to Lease",                      "gain / loss to lease",      indent=1),
+        row("  Concessions",                        "concessions",               indent=1),
+        row("  Vacancy Loss",                       "vacancy loss",              indent=1),
+        row("  Non-Revenue Units",                  "non revenue units",         indent=1),
+        row("  Bad Debt",                           "bad debt",                  indent=1),
+        row("  Net Rental Income",                  "net rental income",         indent=1, bold=True),
+        row("  Other Income",                       "other income ops",          indent=1),
+        row("TOTAL REVENUE",                        "total revenue",             bold=True),
+        # ── EXPENSES ─────────────────────────────────────────────────────
+        row("OPERATING EXPENSES",                   "",                          bold=True),
+        row("  Payroll",                            "payroll",                   indent=1),
+        row("  Repairs & Maintenance",              "repairs & maintenance",     indent=1),
+        row("  Turnover",                           "turnover expenses",         indent=1),
+        row("  Contract Services",                  "contract services",         indent=1),
+        row("  Utilities",                          "utilities",                 indent=1),
+        row("  Landscaping",                        "landscape maintenance contract", indent=1),
+        row("  Marketing",                          "marketing",                 indent=1),
+        row("  Administrative",                     "administrative",            indent=1),
+        row("  Management Fees",                    "management fee",            indent=1),
+        row("  Controllable Expenses",              "controllable",              indent=1, bold=True),
+        row("  Real Estate Taxes",                  "real estate taxes",         indent=1),
+        row("  Insurance",                          "insurance",                 indent=1),
+        row("  Non-Controllable Expenses",          "non controllable",          indent=1, bold=True),
+        row("TOTAL OPERATING EXPENSES",             "operating expenses",        bold=True),
+        # ── NOI ───────────────────────────────────────────────────────────
+        row("NET OPERATING INCOME",                 "net operating income",      bold=True),
+    ]
 
-    if not rows:
-        # Fallback: show all non-subtotal items
-        for li in line_items[:40]:
-            rows.append({
-                "Line Item":   li.get("line_item", ""),
-                "T12":         fmt_currency(li.get("t12")),
-                "T6":          fmt_currency(li.get("t6")),
-                "T3":          fmt_currency(li.get("t3")),
-                "Current Mo.": fmt_currency(li.get("t1")),
-            })
+    # Drop the empty header rows (no key match expected) but keep separators
+    display_rows = [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+    df = pd.DataFrame(display_rows)
 
-    if rows:
-        df = pd.DataFrame(rows)
-        st.dataframe(df, use_container_width=True, hide_index=True, height=420)
-    else:
-        st.info("No financial statement data available.")
+    # Apply styling
+    def style_row(row_s):
+        orig = rows[row_s.name]
+        if orig["_bold"] or row_s["Line Item"].strip() in (
+            "NET OPERATING INCOME", "TOTAL REVENUE", "TOTAL OPERATING EXPENSES"
+        ):
+            return ["font-weight:700; color:#F0F4FF; background-color:#0D1A2F"] * len(row_s)
+        if row_s["Line Item"].strip() in ("REVENUE", "OPERATING EXPENSES"):
+            return ["font-weight:600; color:#00C2FF; background-color:#0A1525; letter-spacing:.05em"] * len(row_s)
+        return ["color:#C8D8F0"] * len(row_s)
+
+    styled = df.style.apply(style_row, axis=1).set_properties(**{
+        "font-size": "13px",
+        "padding": "6px 12px",
+    })
+
+    st.dataframe(styled, use_container_width=True, hide_index=True, height=700)
