@@ -137,11 +137,22 @@ def parse_t12(file_path: str) -> dict:
     for i, row in enumerate(all_rows):
         for j, cell in enumerate(row):
             if isinstance(cell, str) and "T12 As Of Date" in cell:
-                # as_of_date is next non-None value in same row
+                # as_of_date can be a datetime cell or a string like "03/31/2026"
                 for k in range(j + 1, min(j + 5, len(row))):
-                    if isinstance(row[k], datetime):
-                        as_of_date = row[k]
+                    v = row[k]
+                    if isinstance(v, datetime):
+                        as_of_date = v
                         break
+                    if isinstance(v, str) and v.strip():
+                        s = v.strip()
+                        for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y", "%d/%m/%Y"):
+                            try:
+                                as_of_date = datetime.strptime(s, fmt)
+                                break
+                            except ValueError:
+                                pass
+                        if as_of_date is not None:
+                            break
             if isinstance(cell, str) and cell.strip() == "Category":
                 cat_col = j
                 # Look right for "T12 Line-Item Name"
@@ -258,8 +269,15 @@ def parse_t12(file_path: str) -> dict:
 
     # ── Step 3: Build summary ─────────────────────────────────────────────
     def find_value(keyword: str, col: str = "t12") -> float | None:
-        """Search all line items (including subtotals) for the keyword."""
+        """Search all line items for keyword. Skips zero values so we don't
+        return a section-banner row's 0 when a real subtotal row exists."""
         kl = keyword.lower()
+        for li in line_items:
+            if kl in li["line_item"].lower():
+                v = li.get(col)
+                if v is not None and v != 0:
+                    return v
+        # Second pass: allow zero (some genuine zero values)
         for li in line_items:
             if kl in li["line_item"].lower():
                 v = li.get(col)
@@ -267,21 +285,23 @@ def parse_t12(file_path: str) -> dict:
                     return v
         return None
 
+    # Prefer the most specific subtotal label first ("total operating expenses")
+    # before falling back to looser matches ("operating expenses").
     total_rev_t12  = find_value("total revenue", "t12") or find_value("total income", "t12")
-    total_exp_t12  = find_value("operating expenses", "t12")
-    noi_t12        = find_value("net operating income", "t12")
+    total_exp_t12  = find_value("total operating expenses", "t12") or find_value("operating expenses", "t12")
+    noi_t12        = find_value("net operating income", "t12") or find_value("noi", "t12")
 
     total_rev_t6   = find_value("total revenue", "t6") or find_value("total income", "t6")
-    total_exp_t6   = find_value("operating expenses", "t6")
-    noi_t6         = find_value("net operating income", "t6")
+    total_exp_t6   = find_value("total operating expenses", "t6") or find_value("operating expenses", "t6")
+    noi_t6         = find_value("net operating income", "t6") or find_value("noi", "t6")
 
     total_rev_t3   = find_value("total revenue", "t3") or find_value("total income", "t3")
-    total_exp_t3   = find_value("operating expenses", "t3")
-    noi_t3         = find_value("net operating income", "t3")
+    total_exp_t3   = find_value("total operating expenses", "t3") or find_value("operating expenses", "t3")
+    noi_t3         = find_value("net operating income", "t3") or find_value("noi", "t3")
 
     total_rev_t1   = find_value("total revenue", "t1") or find_value("total income", "t1")
-    total_exp_t1   = find_value("operating expenses", "t1")
-    noi_t1         = find_value("net operating income", "t1")
+    total_exp_t1   = find_value("total operating expenses", "t1") or find_value("operating expenses", "t1")
+    noi_t1         = find_value("net operating income", "t1") or find_value("noi", "t1")
 
     noi_margin = (noi_t12 / total_rev_t12) if (noi_t12 and total_rev_t12 and total_rev_t12 != 0) else None
 

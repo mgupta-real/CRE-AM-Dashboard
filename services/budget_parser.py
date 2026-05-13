@@ -59,12 +59,23 @@ def parse_budget(file_path: str) -> dict:
 
     for i, row in enumerate(all_rows):
         for j, cell in enumerate(row):
-            # As-of date
+            # As-of date — accept datetime or string formats
             if isinstance(cell, str) and "Budget As Of Date" in cell:
                 for k in range(j + 1, min(j + 5, len(row))):
-                    if isinstance(row[k], datetime):
-                        as_of_date = row[k]
+                    v = row[k]
+                    if isinstance(v, datetime):
+                        as_of_date = v
                         break
+                    if isinstance(v, str) and v.strip():
+                        s = v.strip()
+                        for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m/%d/%y", "%d/%m/%Y"):
+                            try:
+                                as_of_date = datetime.strptime(s, fmt)
+                                break
+                            except ValueError:
+                                pass
+                        if as_of_date is not None:
+                            break
             # Header row marker — "Category" cell with line-item header to the right
             if isinstance(cell, str) and cell.strip() == "Category":
                 cat_col = j

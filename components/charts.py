@@ -519,3 +519,110 @@ def leased_vs_occupied_by_unit_type(unit_types, occupied, on_notice, vacant, hei
         bargap=0.25,
     )
     return fig
+
+
+# ── Budget vs Actual by Category (grouped bars, sorted by absolute variance) ─
+def budget_vs_actual_categories(categories, actuals, budgets, height=420):
+    """
+    Horizontal grouped bars: Actual (solid blue) vs Budget (lighter cyan) per
+    category. Caller should pre-sort categories by absolute variance so the
+    biggest gaps appear at the top.
+    """
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=categories, x=budgets, name="Budget",
+        orientation="h", marker_color=COLORS["accent_cyan"], opacity=0.65,
+        hovertemplate="<b>%{y}</b><br>Budget: $%{x:,.0f}<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        y=categories, x=actuals, name="Actual",
+        orientation="h", marker_color=COLORS["accent_blue"],
+        hovertemplate="<b>%{y}</b><br>Actual: $%{x:,.0f}<extra></extra>",
+    ))
+    fig.update_layout(
+        **_base_layout(height=height, legend_y=-0.10, margin=dict(l=160, r=20, t=20, b=50)),
+        xaxis=dict(**_AXIS, tickprefix="$", tickformat=",.0f"),
+        yaxis=dict(**_AXIS, automargin=True),
+        barmode="group",
+        bargap=0.20,
+    )
+    return fig
+
+
+# ── Variance Waterfall (Budget NOI → +Favorable → -Unfavorable → Actual NOI) ─
+def variance_waterfall(budget_noi, favorable_items, unfavorable_items, actual_noi, height=380):
+    """
+    Plotly Waterfall: starts at Budget NOI, adds favorable variances (revenue
+    over-performance + expense under-spend), subtracts unfavorable ones, ends
+    at Actual NOI.
+
+    favorable_items, unfavorable_items: list of (label, value) tuples.
+    Values are positive numbers representing the magnitude of variance.
+    """
+    measure = (
+        ["absolute"]
+        + ["relative"] * len(favorable_items)
+        + ["relative"] * len(unfavorable_items)
+        + ["total"]
+    )
+    x = (
+        ["Budget NOI"]
+        + [name for name, _ in favorable_items]
+        + [name for name, _ in unfavorable_items]
+        + ["Actual NOI"]
+    )
+    y = (
+        [budget_noi]
+        + [v for _, v in favorable_items]
+        + [-v for _, v in unfavorable_items]
+        + [actual_noi]
+    )
+
+    fig = go.Figure(go.Waterfall(
+        orientation="v",
+        measure=measure,
+        x=x, y=y, textposition="outside",
+        text=[f"${v:,.0f}" for v in y],
+        connector=dict(line=dict(color=COLORS["text_muted"], dash="dot", width=1)),
+        increasing=dict(marker=dict(color=COLORS["green"])),
+        decreasing=dict(marker=dict(color=COLORS["red"])),
+        totals=dict(marker=dict(color=COLORS["accent_blue"])),
+        hovertemplate="<b>%{x}</b><br>$%{y:,.0f}<extra></extra>",
+    ))
+    fig.update_layout(
+        **_base_layout(height=height, showlegend=False, margin=dict(l=70, r=20, t=20, b=80)),
+        xaxis=dict(**_AXIS, tickangle=-30),
+        yaxis=dict(**_AXIS, tickprefix="$", tickformat=",.0f"),
+    )
+    return fig
+
+
+# ── Monthly Actual vs Budget (dual line, with shaded variance) ──────────────
+def monthly_actual_vs_budget(month_labels, actuals, budgets, metric_name="Revenue", height=320):
+    """
+    Two-line chart: actual (solid) vs budget (dashed) per month for a given
+    metric. The fill between the lines shades green when actual > budget for
+    revenue metrics, red when actual < budget (caller can flip for expenses).
+    """
+    fig = go.Figure()
+    # Budget line (dashed, behind)
+    fig.add_trace(go.Scatter(
+        x=month_labels, y=budgets, name=f"Budget {metric_name}",
+        mode="lines+markers", line=dict(color=COLORS["accent_cyan"], width=2, dash="dash"),
+        marker=dict(size=5),
+        hovertemplate="<b>%{x}</b><br>Budget: $%{y:,.0f}<extra></extra>",
+    ))
+    # Actual line (solid)
+    fig.add_trace(go.Scatter(
+        x=month_labels, y=actuals, name=f"Actual {metric_name}",
+        mode="lines+markers", line=dict(color=COLORS["accent_blue"], width=2.5),
+        marker=dict(size=6),
+        fill="tonexty", fillcolor="rgba(0, 196, 140, 0.10)",
+        hovertemplate="<b>%{x}</b><br>Actual: $%{y:,.0f}<extra></extra>",
+    ))
+    fig.update_layout(
+        **_base_layout(height=height, legend_y=-0.22, margin=dict(l=70, r=20, t=20, b=60)),
+        xaxis=dict(**_AXIS, tickangle=-30),
+        yaxis=dict(**_AXIS, tickprefix="$", tickformat=",.0f"),
+    )
+    return fig
