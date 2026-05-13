@@ -249,6 +249,20 @@ def render(rr_data: dict | None,
     _render_rent_roll_table(units)
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # ── Analyst Notes (rules-based narrative) ──────────────────────────────
+    from services.insights_rules import load_config, evaluate_rent_roll, sort_findings
+    from components.narrative import render_narrative
+    config = load_config()
+    findings = sort_findings(evaluate_rent_roll(
+        rr_data, box_score_data, ar_data, lto_data, config
+    ))
+    render_narrative(
+        findings,
+        title="Analyst Notes — Rent Roll & Operations",
+        empty_message="Once a rent roll is uploaded, operational flags appear here. "
+                      "Upload a Box Score, Aged Receivables, or Lease Trade-Out file to enrich the analysis.",
+    )
+
 
 def _render_watchlist(units: list):
     """Show top upside / vacant units."""

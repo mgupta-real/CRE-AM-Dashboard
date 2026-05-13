@@ -1,0 +1,112 @@
+{
+  "_schema_note": "Edit these thresholds in Settings → Insights Rules to customize how the narrative flags things on each tab. Variance % is signed: positive means actual > budget for revenue (favorable) or actual > budget for expenses (unfavorable). The rules engine flips sign for expense categories automatically.",
+
+  "financials": {
+    "noi_variance": {
+      "enabled": true,
+      "label": "NOI vs Budget Variance",
+      "warn_threshold_pct": 5.0,
+      "critical_threshold_pct": 10.0,
+      "min_dollar_threshold": 5000
+    },
+    "revenue_variance": {
+      "enabled": true,
+      "label": "Revenue vs Budget Variance",
+      "warn_threshold_pct": 3.0,
+      "critical_threshold_pct": 7.0,
+      "min_dollar_threshold": 5000
+    },
+    "expense_variance": {
+      "enabled": true,
+      "label": "Operating Expenses vs Budget Variance",
+      "warn_threshold_pct": 5.0,
+      "critical_threshold_pct": 10.0,
+      "min_dollar_threshold": 5000
+    },
+    "noi_margin": {
+      "enabled": true,
+      "label": "NOI Margin Health",
+      "warn_below_pct": 50.0,
+      "critical_below_pct": 40.0
+    },
+    "category_variance": {
+      "enabled": true,
+      "label": "Per-Category Variance",
+      "warn_threshold_pct": 10.0,
+      "critical_threshold_pct": 20.0,
+      "min_dollar_threshold": 2000,
+      "max_findings": 5
+    },
+    "t3_vs_t12_trend": {
+      "enabled": true,
+      "label": "T3 Annualized vs T12 Trend",
+      "warn_threshold_pct": 5.0,
+      "critical_threshold_pct": 10.0
+    },
+    "bad_debt": {
+      "enabled": true,
+      "label": "Bad Debt % of Gross Potential Rent",
+      "warn_threshold_pct": 1.5,
+      "critical_threshold_pct": 3.0
+    }
+  },
+
+  "rent_roll": {
+    "occupancy": {
+      "enabled": true,
+      "label": "Physical Occupancy",
+      "warn_below_pct": 93.0,
+      "critical_below_pct": 90.0,
+      "positive_above_pct": 95.0
+    },
+    "loss_to_lease": {
+      "enabled": true,
+      "label": "Loss to Lease",
+      "warn_threshold_pct": 3.0,
+      "critical_threshold_pct": 6.0
+    },
+    "exposure": {
+      "enabled": true,
+      "label": "Vacancy Exposure (Vacant + Notice Unrented)",
+      "warn_threshold_pct": 5.0,
+      "critical_threshold_pct": 8.0
+    },
+    "delinquency": {
+      "enabled": true,
+      "label": "Resident Delinquency % of GPR",
+      "warn_threshold_pct": 1.5,
+      "critical_threshold_pct": 3.0
+    },
+    "aged_90_plus": {
+      "enabled": true,
+      "label": "90+ Days Aged Receivables",
+      "warn_dollar_threshold": 1000,
+      "critical_dollar_threshold": 5000
+    },
+    "lease_expirations_concentration": {
+      "enabled": true,
+      "label": "Lease Expirations Concentration (next 3 months)",
+      "warn_threshold_pct": 25.0,
+      "critical_threshold_pct": 40.0
+    },
+    "make_ready_not_ready": {
+      "enabled": true,
+      "label": "Make-Ready Status (Not Ready %)",
+      "warn_threshold_pct": 30.0,
+      "critical_threshold_pct": 50.0
+    },
+    "net_absorption": {
+      "enabled": true,
+      "label": "Net Absorption (Move-ins minus Move-outs)",
+      "warn_threshold_units": -2,
+      "critical_threshold_units": -5
+    },
+    "rent_tradeout": {
+      "enabled": true,
+      "label": "Rent Trade-Out (Avg Lease Rent Change %)",
+      "warn_below_pct": 0.0,
+      "critical_below_pct": -2.0,
+      "positive_above_pct": 3.0
+    }
+  }
+}

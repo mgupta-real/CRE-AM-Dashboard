@@ -259,6 +259,18 @@ def render(t12_data: dict | None, rr_data: dict | None, budget_data: dict | None
     # ── Financial Statement (T12 / T6 / T3 / Current Mo. / YTD + Budget) ──
     _render_financial_statement(t12_data, budget_data)
 
+    # ── Analyst Notes (rules-based narrative) ─────────────────────────────
+    from services.insights_rules import load_config, evaluate_financials, sort_findings
+    from components.narrative import render_narrative
+    config = load_config()
+    findings = sort_findings(evaluate_financials(t12_data, budget_data, config))
+    render_narrative(
+        findings,
+        title="Analyst Notes — Financials",
+        empty_message="Upload a Budget file in the Upload Center to unlock variance flags. "
+                      "Some signals (NOI margin, T3 trend, bad debt) appear from T12 data alone.",
+    )
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Helpers — period slicing, deltas, budget interpolation

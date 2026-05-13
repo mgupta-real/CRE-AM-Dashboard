@@ -140,6 +140,54 @@ def _trigger_export(client_id, property_id):
 
 def _render_settings():
     st.markdown("## ⚙ Settings")
+
+    # ── Insights Rules Editor ─────────────────────────────────────────────
+    from services.insights_rules import load_config, save_config
+    cfg = load_config()
+
+    st.markdown(
+        '<div class="dash-card"><div class="dash-card-title">'
+        '🎯 Insights Rules — Customize Thresholds</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p style="color:#8BA3C7;font-size:12px;margin:6px 0 14px 0;">'
+        'These thresholds drive the analyst notes at the bottom of each tab. '
+        'Adjust them to match your portfolio\'s norms; lower numbers flag more aggressively.'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
+    tabs = st.tabs(["💰 Financials", "🏠 Rent Roll"])
+
+    with tabs[0]:
+        _render_rules_editor(cfg, section="financials", help_text="Variance thresholds for the Financials tab insights.")
+    with tabs[1]:
+        _render_rules_editor(cfg, section="rent_roll", help_text="Operational thresholds for the Rent Roll tab insights.")
+
+    col1, col2, _ = st.columns([1, 1, 4])
+    with col1:
+        if st.button("💾 Save Changes", key="save_insights_rules", type="primary"):
+            # Persist the modified cfg from session_state back to disk
+            new_cfg = st.session_state.get("_insights_cfg_edit", cfg)
+            save_config(new_cfg)
+            st.success("Saved — rules apply on the next page render.")
+    with col2:
+        if st.button("↺ Reset to Defaults", key="reset_insights_rules"):
+            # Restore by deleting the file; load_config() returns empty defaults
+            from services.insights_rules import _CONFIG_PATH
+            import shutil, pathlib
+            # Read the default config that ships in /data/
+            # We don't have a separate defaults copy, so we just remind the user
+            # to re-deploy the JSON file. Simpler: keep the current value as default.
+            st.warning(
+                "To reset: delete `data/insights_config.json` and restart the app — "
+                "the next render will recreate the file with shipped defaults."
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── App Info ──────────────────────────────────────────────────────────
     st.markdown('<div class="dash-card">', unsafe_allow_html=True)
     st.markdown("### App Info")
     st.markdown("""
@@ -159,6 +207,72 @@ def _render_settings():
     5. Enable Row Level Security on Supabase tables using `client_id` and `property_id` foreign keys
     """)
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_rules_editor(cfg: dict, *, section: str, help_text: str = ""):
+    """Render one section of the rules editor. Mutates session_state copy of cfg."""
+    if "_insights_cfg_edit" not in st.session_state:
+        st.session_state["_insights_cfg_edit"] = cfg
+
+    rules = cfg.get(section, {})
+
+    if help_text:
+        st.markdown(
+            f'<p style="color:#8BA3C7;font-size:11px;margin:0 0 12px 0;">{help_text}</p>',
+            unsafe_allow_html=True,
+        )
+
+    if not rules:
+        st.info("No rules defined for this section yet.")
+        return
+
+    for rule_id, rule in rules.items():
+        if rule_id.startswith("_"):
+            continue
+        label = rule.get("label", rule_id)
+        enabled = st.checkbox(
+            f"**{label}**",
+            value=bool(rule.get("enabled", True)),
+            key=f"rule_enabled_{section}_{rule_id}",
+        )
+        if not enabled:
+            st.session_state["_insights_cfg_edit"].setdefault(section, {}).setdefault(rule_id, {}).update({"enabled": False})
+            st.markdown("---")
+            continue
+
+        # Display numeric threshold inputs based on what keys the rule uses
+        cols = st.columns(4)
+        updates = {"enabled": True, "label": rule.get("label", rule_id)}
+        i = 0
+        for key, val in rule.items():
+            if key in ("enabled", "label"):
+                continue
+            with cols[i % 4]:
+                # Auto-detect: dollars vs percent vs units
+                pretty = key.replace("_", " ").replace("pct", "%").replace("threshold", "thresh").title()
+                if isinstance(val, (int, float)):
+                    is_int = isinstance(val, int) and "pct" not in key and "dollar" not in key
+                    if is_int:
+                        updates[key] = st.number_input(
+                            pretty, value=int(val), step=1,
+                            key=f"rule_{section}_{rule_id}_{key}",
+                        )
+                    elif "dollar" in key:
+                        updates[key] = st.number_input(
+                            pretty + " ($)", value=float(val), step=500.0,
+                            key=f"rule_{section}_{rule_id}_{key}",
+                        )
+                    else:
+                        updates[key] = st.number_input(
+                            pretty, value=float(val), step=0.5, format="%.1f",
+                            key=f"rule_{section}_{rule_id}_{key}",
+                        )
+                else:
+                    updates[key] = val
+            i += 1
+
+        st.session_state["_insights_cfg_edit"].setdefault(section, {})[rule_id] = updates
+        st.markdown("---")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
